@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>ai.new-wave.iphone-use</string>
+    <key>CFBundleName</key>
+    <string>iPhone Use</string>
+    <key>CFBundleExecutable</key>
+    <string>iphone-use</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>iPhone Use shows up as a Bluetooth keyboard and mouse so it can tap and type on your iPhone.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>iPhone Use reads your iPhone's screen over USB, the same way QuickTime does.</string>
+</dict>
+</plist>
