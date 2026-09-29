@@ -4,35 +4,45 @@ import Foundation
 /// Screenshots are scaled so the long edge is at most `longEdge`; tap and swipe
 /// coordinates are read in that scaled image's pixels.
 enum MCPServer {
-    static let longEdge = 1200.0
+    static let longEdge = 1200
     static var base = URL(string: "http://127.0.0.1:7390")!
 
+    static let device: [String: Any] = [
+        "type": "string",
+        "description": "Which iPhone (id or name from list_devices). Only needed when several are connected.",
+    ]
+
     static let tools: [[String: Any]] = [
-        tool("screenshot", "Take a screenshot of the iPhone screen.", [:]),
+        tool("list_devices", "List the connected iPhones.", [:]),
+        tool("screenshot", "Take a screenshot of the iPhone screen.", ["device": device]),
         tool(
             "tap", "Tap a point on the iPhone screen. Coordinates are pixels of the latest screenshot.",
-            ["x": number("X in screenshot pixels"), "y": number("Y in screenshot pixels")], required: ["x", "y"]),
+            ["x": number("X in screenshot pixels"), "y": number("Y in screenshot pixels"), "device": device],
+            required: ["x", "y"]),
         tool(
             "long_press", "Press and hold a point, e.g. to open a context menu.",
             [
                 "x": number("X in screenshot pixels"), "y": number("Y in screenshot pixels"),
-                "seconds": number("How long to hold (default 1)"),
+                "seconds": number("How long to hold (default 1)"), "device": device,
             ], required: ["x", "y"]),
         tool(
             "swipe", "Drag from one point to another, e.g. to scroll. Coordinates are screenshot pixels.",
             [
                 "x1": number("Start X"), "y1": number("Start Y"), "x2": number("End X"), "y2": number("End Y"),
-                "seconds": number("Duration (default 0.3)"),
+                "seconds": number("Duration (default 0.3)"), "device": device,
             ], required: ["x1", "y1", "x2", "y2"]),
         tool(
             "type_text", "Type text into the focused field with the Bluetooth keyboard (US layout, ASCII only).",
-            ["text": ["type": "string"]], required: ["text"]),
+            ["text": ["type": "string"], "device": device], required: ["text"]),
         tool(
             "press_key",
             "Press a key, optionally with modifiers. Keys: enter, escape, backspace, tab, space, up, down, left, right, or a character. Modifiers: cmd, shift, alt, ctrl. cmd+space opens Spotlight.",
-            ["key": ["type": "string"], "modifiers": ["type": "array", "items": ["type": "string"]]],
+            [
+                "key": ["type": "string"], "modifiers": ["type": "array", "items": ["type": "string"]],
+                "device": device,
+            ],
             required: ["key"]),
-        tool("home", "Go to the Home Screen.", [:]),
+        tool("home", "Go to the Home Screen.", ["device": device]),
     ]
 
     static func run() -> Never {
@@ -56,9 +66,9 @@ enum MCPServer {
             reply(id, [
                 "protocolVersion": params["protocolVersion"] as? String ?? "2025-06-18",
                 "capabilities": ["tools": [:]],
-                "serverInfo": ["name": "iphone-use", "version": "0.1.0"],
+                "serverInfo": ["name": "iphone-use", "version": "0.2.0"],
                 "instructions":
-                    "Controls a real iPhone. Take a screenshot first, then tap using pixel coordinates from the most recent screenshot. Take another screenshot to check the result.",
+                    "Controls real iPhones. Take a screenshot first, then tap using pixel coordinates from the most recent screenshot of that phone. Take another screenshot to check the result. With several phones connected, call list_devices and pass device to every tool.",
             ])
         case "tools/list":
             reply(id, ["tools": tools])
@@ -73,65 +83,70 @@ enum MCPServer {
     }
 
     private static func call(_ name: String, _ args: [String: Any]) -> [String: Any] {
+        let device = args["device"] as? String
         do {
             switch name {
+            case "list_devices":
+                let (data, _) = try get("/devices")
+                return ["content": [["type": "text", "text": String(decoding: data, as: UTF8.self)]]]
             case "screenshot":
-                return try screenshot()
+                return try screenshot(device)
             case "tap":
-                try post("/tap", scaled(args, ["x": "x", "y": "y"]))
+                try post("/tap", scaled(args, ["x", "y"]))
             case "long_press":
-                var body = try scaled(args, ["x": "x", "y": "y"])
+                var body = try scaled(args, ["x", "y"])
                 body["hold"] = args["seconds"] ?? 1.0
                 try post("/tap", body)
             case "swipe":
-                var body = try scaled(args, ["x1": "x1", "y1": "y1", "x2": "x2", "y2": "y2"])
+                var body = try scaled(args, ["x1", "y1", "x2", "y2"])
                 body["duration"] = args["seconds"] ?? 0.3
                 try post("/swipe", body)
             case "type_text":
-                try post("/type", ["text": args["text"] ?? ""])
+                try post("/type", withDevice(["text": args["text"] ?? ""], device))
             case "press_key":
-                try post("/key", ["key": args["key"] ?? "", "modifiers": args["modifiers"] ?? []])
+                try post("/key", withDevice(["key": args["key"] ?? "", "modifiers": args["modifiers"] ?? []], device))
             case "home":
-                try post("/home", [:])
+                try post("/home", withDevice([:], device))
             default:
                 return failure("unknown tool \(name)")
             }
             Thread.sleep(forTimeInterval: 0.6)
-            return try screenshot()
+            return try screenshot(device)
         } catch {
             return failure("\(error)")
         }
     }
 
-    private static func screenshot() throws -> [String: Any] {
-        let status = try get("/status")
-        guard let screen = (try JSONSerialization.jsonObject(with: status.0) as? [String: Any])?["screen"]
-            as? [String: Any], let width = screen["width"] as? Double, let height = screen["height"] as? Double
-        else { throw MCPError("no iPhone screen: plug the iPhone in over USB and unlock it") }
-        let scale = min(1, longEdge / max(width, height))
-        let (image, _) = try get("/screenshot?maxWidth=\(Int((width * scale).rounded()))")
-        let size = "\(Int((width * scale).rounded()))x\(Int((height * scale).rounded()))"
+    private static func screenshot(_ device: String?) throws -> [String: Any] {
+        var path = "/screenshot?maxEdge=\(longEdge)"
+        if let device, let encoded = device.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            path += "&device=\(encoded)"
+        }
+        let (image, response) = try get(path)
+        let width = response.value(forHTTPHeaderField: "X-Image-Width") ?? "?"
+        let height = response.value(forHTTPHeaderField: "X-Image-Height") ?? "?"
+        let id = response.value(forHTTPHeaderField: "X-Device") ?? ""
         return [
             "content": [
                 ["type": "image", "data": image.base64EncodedString(), "mimeType": "image/jpeg"],
-                ["type": "text", "text": "Screenshot \(size) px. Use these pixels for tap and swipe."],
+                ["type": "text", "text": "Screenshot of \(id), \(width)x\(height) px. Use these pixels for tap and swipe."],
             ]
         ]
     }
 
-    /// Adds the scaled screenshot size so the app maps coordinates back to the full screen.
-    private static func scaled(_ args: [String: Any], _ keys: [String: String]) throws -> [String: Any] {
-        let (status, _) = try get("/status")
-        guard let screen = (try JSONSerialization.jsonObject(with: status) as? [String: Any])?["screen"]
-            as? [String: Any], let width = screen["width"] as? Double, let height = screen["height"] as? Double
-        else { throw MCPError("no iPhone screen: plug the iPhone in over USB and unlock it") }
-        let scale = min(1, longEdge / max(width, height))
-        var body: [String: Any] = ["width": width * scale, "height": height * scale]
-        for (from, to) in keys {
-            guard let value = args[from] else { throw MCPError("\(from) is required") }
-            body[to] = value
+    /// Coordinates arrive in screenshot pixels; `maxEdge` tells the app how that screenshot was scaled.
+    private static func scaled(_ args: [String: Any], _ keys: [String]) throws -> [String: Any] {
+        var body: [String: Any] = ["maxEdge": longEdge]
+        for key in keys {
+            guard let value = args[key] else { throw MCPError("\(key) is required") }
+            body[key] = value
         }
-        return body
+        return withDevice(body, args["device"] as? String)
+    }
+
+    private static func withDevice(_ body: [String: Any], _ device: String?) -> [String: Any] {
+        guard let device else { return body }
+        return body.merging(["device": device]) { $1 }
     }
 
     private static func get(_ path: String) throws -> (Data, HTTPURLResponse) {

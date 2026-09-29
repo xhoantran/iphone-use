@@ -16,6 +16,7 @@ let port = UInt16(ProcessInfo.processInfo.environment["IPHONE_USE_PORT"] ?? "") 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 
+Devices.shared.start()
 HIDPeripheral.shared.start()
 ScreenCapture.shared.start()
 let server = HTTPServer(port: port, handler: Routes.handle)

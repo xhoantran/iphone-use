@@ -1,13 +1,18 @@
 import Foundation
 
-/// Turns taps, swipes and text into HID reports. Runs on one serial queue so gestures
-/// from concurrent requests never interleave.
+/// Turns taps, swipes and text into HID reports for one phone. Each phone has its own
+/// serial queue, so gestures never interleave and phones work in parallel.
 final class Input {
-    static let shared = Input()
+    let host: UUID
 
-    private let queue = DispatchQueue(label: "iphone-use.input")
+    private let queue: DispatchQueue
     private let hid = HIDPeripheral.shared
     private var buttons: UInt8 = 0
+
+    init(host: UUID) {
+        self.host = host
+        queue = DispatchQueue(label: "iphone-use.input.\(host)")
+    }
 
     /// Seconds between reports. BLE connection intervals are ~15-30 ms.
     var step: TimeInterval = 0.03
@@ -56,15 +61,15 @@ final class Input {
             while remainingX != 0 || remainingY != 0 {
                 let sx = max(-127, min(127, remainingX))
                 let sy = max(-127, min(127, remainingY))
-                hid.send(.relativeMouse, [0, UInt8(bitPattern: Int8(sx)), UInt8(bitPattern: Int8(sy)), 0])
+                hid.send(.relativeMouse, [0, UInt8(bitPattern: Int8(sx)), UInt8(bitPattern: Int8(sy)), 0], to: host)
                 remainingX -= sx
                 remainingY -= sy
                 pause(step)
             }
             if click {
-                hid.send(.relativeMouse, [1, 0, 0, 0])
+                hid.send(.relativeMouse, [1, 0, 0, 0], to: host)
                 pause(0.08)
-                hid.send(.relativeMouse, [0, 0, 0, 0])
+                hid.send(.relativeMouse, [0, 0, 0, 0], to: host)
                 pause(step)
             }
         }
@@ -96,24 +101,24 @@ final class Input {
 
     func consumer(_ usage: UInt16) {
         queue.sync {
-            hid.send(.consumer, [UInt8(usage & 0xFF), UInt8(usage >> 8)])
+            hid.send(.consumer, [UInt8(usage & 0xFF), UInt8(usage >> 8)], to: host)
             pause(0.08)
-            hid.send(.consumer, [0, 0])
+            hid.send(.consumer, [0, 0], to: host)
             pause(step)
         }
     }
 
     private func press(_ stroke: Keymap.Stroke) {
         if stroke.modifiers != 0 {
-            hid.send(.keyboard, [stroke.modifiers, 0, 0, 0, 0, 0, 0, 0])
+            hid.send(.keyboard, [stroke.modifiers, 0, 0, 0, 0, 0, 0, 0], to: host)
             pause(step)
         }
-        hid.send(.keyboard, [stroke.modifiers, 0, stroke.code, 0, 0, 0, 0, 0])
+        hid.send(.keyboard, [stroke.modifiers, 0, stroke.code, 0, 0, 0, 0, 0], to: host)
         pause(step)
-        hid.send(.keyboard, [stroke.modifiers, 0, 0, 0, 0, 0, 0, 0])
+        hid.send(.keyboard, [stroke.modifiers, 0, 0, 0, 0, 0, 0, 0], to: host)
         pause(step)
         if stroke.modifiers != 0 {
-            hid.send(.keyboard, [0, 0, 0, 0, 0, 0, 0, 0])
+            hid.send(.keyboard, [0, 0, 0, 0, 0, 0, 0, 0], to: host)
             pause(step)
         }
     }
@@ -124,12 +129,13 @@ final class Input {
         let max = Double(HIDReportMap.absoluteMax)
         let px = UInt16(Swift.max(0, Swift.min(max, (x * max).rounded())))
         let py = UInt16(Swift.max(0, Swift.min(max, (y * max).rounded())))
-        hid.send(.absolutePointer, [buttons, UInt8(px & 0xFF), UInt8(px >> 8), UInt8(py & 0xFF), UInt8(py >> 8)])
+        let report = [buttons, UInt8(px & 0xFF), UInt8(px >> 8), UInt8(py & 0xFF), UInt8(py >> 8)]
+        hid.send(.absolutePointer, report, to: host)
     }
 
     private func button(down: Bool) {
         buttons = down ? 1 : 0
-        hid.send(.relativeMouse, [buttons, 0, 0, 0])
+        hid.send(.relativeMouse, [buttons, 0, 0, 0], to: host)
     }
 
     private func pause(_ seconds: TimeInterval) {
