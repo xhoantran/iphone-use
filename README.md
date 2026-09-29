@@ -131,7 +131,7 @@ curl -X POST localhost:7390/key   -d '{"key":"space","modifiers":["cmd"]}'
 curl -X POST localhost:7390/home
 ```
 
-`scripts/record.sh demo.mp4` records the phone screen until you press Ctrl-C.
+`scripts/record.sh demo.mp4 [fps] [device]` records a phone's screen until you press Ctrl-C.
 
 ## Several iPhones
 
@@ -152,9 +152,9 @@ curl -X POST localhost:7390/pair  -d '{"device":"<id>","host":"<uuid from unmatc
 
 ## Limits
 
-- Several phones at once is new and has only been tested with one phone. Classic
-  Bluetooth caps a Mac at 7 devices; iPhone Use runs on Bluetooth LE, whose limit
-  depends on the Mac's Bluetooth chip and has not been measured.
+- Tested with two iPhones at once. Classic Bluetooth caps a Mac at 7 devices; iPhone Use
+  runs on Bluetooth LE, whose limit depends on the Mac's Bluetooth chip and has not
+  been measured.
 - Typing is US ASCII. Other characters need the clipboard (not built yet).
 - Portrait only has been tested.
 - The phone must stay unlocked. Set Auto-Lock to Never while an agent is working.
