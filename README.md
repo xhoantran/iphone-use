@@ -2,6 +2,8 @@
 
 Let an AI agent use a real iPhone from your Mac. Nothing is installed on the phone.
 
+<p align="center"><img src="docs/demo.gif" width="300" alt="iPhone Use tapping 12 × 34 = on a real iPhone's Calculator"></p>
+
 iPhone Use is a small macOS app. It reads the iPhone's screen over a USB cable and
 taps and types through Bluetooth, posing as a keyboard and mouse. Your agent gets
 an MCP server (and a plain HTTP API) with `screenshot`, `tap`, `swipe`, `type_text`,
@@ -62,7 +64,8 @@ Check it:
 
 ```sh
 curl localhost:7390/status
-# {"bluetooth":"connected","hosts":["..."],"screen":{"name":"iPhone","width":1180,"height":2556}}
+# {"bluetooth":"1 connected, advertising as iPhone Use","devices":[{"id":"...","name":"iPhone",
+#   "bluetooth":true,"width":1180,"height":2556}],"unmatchedHosts":[]}
 ```
 
 iPhone Use runs as a menu-less background app. Quit it with `pkill -x iphone-use`.
@@ -95,6 +98,7 @@ pixels of that screenshot. Every action returns a fresh screenshot.
 
 | Tool | Arguments |
 | --- | --- |
+| `list_devices` | |
 | `screenshot` | |
 | `tap` | `x`, `y` |
 | `long_press` | `x`, `y`, `seconds` |
@@ -103,6 +107,9 @@ pixels of that screenshot. Every action returns a fresh screenshot.
 | `press_key` | `key`, `modifiers` (`cmd`, `shift`, `alt`, `ctrl`) |
 | `home` | |
 
+Every tool except `list_devices` also takes `device`, needed only when more than one
+iPhone is connected.
+
 `press_key` with `space` + `cmd` opens Spotlight, which is often the fastest way to
 open an app: Spotlight, type the name, `enter`.
 
@@ -110,10 +117,13 @@ open an app: Spotlight, type the name, `enter`.
 
 Everything listens on `127.0.0.1:7390` (set `IPHONE_USE_PORT` to change it).
 Coordinates are pixels of the full-resolution screen unless you pass `width` and
-`height` for the image they came from, or `"fraction": true` for 0 to 1.
+`height` for the image they came from, `maxEdge` for a screenshot taken with that
+`maxEdge`, or `"fraction": true` for 0 to 1. With several phones, add `"device"` to the
+body (or `?device=` to a GET): the phone's id or name from `/devices`.
 
 ```sh
-curl localhost:7390/screenshot -o screen.jpg                  # ?format=png, ?maxWidth=600
+curl localhost:7390/devices
+curl localhost:7390/screenshot -o screen.jpg                  # ?format=png, ?maxEdge=1200, ?device=
 curl -X POST localhost:7390/tap   -d '{"x":590,"y":1278}'
 curl -X POST localhost:7390/swipe -d '{"x1":590,"y1":1900,"x2":590,"y2":700,"duration":0.4}'
 curl -X POST localhost:7390/type  -d '{"text":"hello"}'
@@ -123,10 +133,28 @@ curl -X POST localhost:7390/home
 
 `scripts/record.sh demo.mp4` records the phone screen until you press Ctrl-C.
 
+## Several iPhones
+
+Plug each phone in and pair each one with **iPhone Use** in its Bluetooth settings.
+Every phone gets its own screen capture and its own input queue, so phones work in
+parallel.
+
+Bluetooth does not say which phone a connection belongs to. So when a new phone
+connects, iPhone Use moves the pointer through that connection and looks for the screen
+where it moved, then saves the match in
+`~/Library/Application Support/iPhoneUse/pairings.json`. Each phone is matched once. If a
+match goes wrong:
+
+```sh
+curl -X POST localhost:7390/match -d '{"force":true}'            # forget and match again
+curl -X POST localhost:7390/pair  -d '{"device":"<id>","host":"<uuid from unmatchedHosts>"}'
+```
+
 ## Limits
 
-- One iPhone per Mac for now. BLE can hold several phones, and iPhone Use can
-  address each one, but matching a Bluetooth host to a USB screen is not built yet.
+- Several phones at once is new and has only been tested with one phone. Classic
+  Bluetooth caps a Mac at 7 devices; iPhone Use runs on Bluetooth LE, whose limit
+  depends on the Mac's Bluetooth chip and has not been measured.
 - Typing is US ASCII. Other characters need the clipboard (not built yet).
 - Portrait only has been tested.
 - The phone must stay unlocked. Set Auto-Lock to Never while an agent is working.

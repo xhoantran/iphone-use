@@ -27,15 +27,18 @@ final class HIDPeripheral: NSObject, CBPeripheralManagerDelegate {
 
     private(set) var state: String = "starting"
 
+    /// Called on the Bluetooth queue when a phone starts or stops listening for input.
+    var onHostsChanged: (() -> Void)?
+
     func start() {
         queue.async {
             self.manager = CBPeripheralManager(delegate: self, queue: self.queue)
         }
     }
 
-    /// Hosts subscribed to at least one input report.
-    var connectedHosts: [String] {
-        queue.sync { hostsWithInput.map(\.uuidString) }
+    /// Phones subscribed to at least one input report.
+    var connectedHosts: [UUID] {
+        queue.sync { hostsWithInput }
     }
 
     private var hostsWithInput: [UUID] {
@@ -43,10 +46,10 @@ final class HIDPeripheral: NSObject, CBPeripheralManagerDelegate {
         return subscriptions.filter { !$0.value.isDisjoint(with: ids) }.map(\.key)
     }
 
-    func send(_ id: ReportID, _ bytes: [UInt8]) {
+    func send(_ id: ReportID, _ bytes: [UInt8], to host: UUID) {
         queue.async {
-            guard let characteristic = self.inputs[id] else { return }
-            self.outbox.append((characteristic, Data(bytes), nil))
+            guard let characteristic = self.inputs[id], let central = self.centrals[host] else { return }
+            self.outbox.append((characteristic, Data(bytes), [central]))
             self.drain()
         }
     }
@@ -211,8 +214,7 @@ final class HIDPeripheral: NSObject, CBPeripheralManagerDelegate {
         if let (id, input) = inputs.first(where: { $0.value === characteristic }) {
             outbox.append((input, Data(count: Self.length(id)), [central]))
             drain()
-            state = "connected"
-            if manager.isAdvertising { manager.stopAdvertising() }
+            hostsChanged()
         }
     }
 
@@ -221,10 +223,7 @@ final class HIDPeripheral: NSObject, CBPeripheralManagerDelegate {
     ) {
         subscriptions[central.identifier]?.remove(ObjectIdentifier(characteristic))
         log("unsubscribe \(characteristic.uuid) \(describe(characteristic)) from \(central.identifier)")
-        if hostsWithInput.isEmpty {
-            state = "advertising as \(localName)"
-            advertise()
-        }
+        hostsChanged()
     }
 
     func peripheralManagerIsReady(toUpdateSubscribers peripheral: CBPeripheralManager) {
@@ -232,6 +231,14 @@ final class HIDPeripheral: NSObject, CBPeripheralManagerDelegate {
     }
 
     // MARK: Helpers
+
+    /// Keeps advertising while phones are connected so more can pair.
+    private func hostsChanged() {
+        let count = hostsWithInput.count
+        state = count == 0 ? "advertising as \(localName)" : "\(count) connected, advertising as \(localName)"
+        advertise()
+        onHostsChanged?()
+    }
 
     private func drain() {
         while let (characteristic, data, targets) = outbox.first {
