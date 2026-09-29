@@ -104,12 +104,12 @@ final class Devices {
     }
 
     func pair(_ device: Device, host: UUID) {
-        store([device.id: host], forgetting: [])
+        store([device.id: host])
     }
 
     /// Matches unmatched hosts to unmatched screens and waits for the result.
-    /// `force` forgets the saved matches of every screen present first. `probe` checks the
-    /// pointer even with one phone, where the match is otherwise assumed.
+    /// `force` rematches every screen present; a screen nothing is found for keeps its match.
+    /// `probe` checks the pointer even with one phone, where the match is otherwise assumed.
     @discardableResult
     func match(force: Bool = false, probe: Bool = false) -> [String: UUID] {
         matchQueue.sync { runMatch(force: force, alwaysProbe: probe) }
@@ -151,7 +151,7 @@ final class Devices {
                 freeScreens.removeAll { $0.id == screen.id }
             }
         }
-        store(found, forgetting: force ? screens.map(\.id) : [])
+        store(found)
         for (id, host) in found {
             log("matched \(screens.first { $0.id == id }?.name ?? id) to bluetooth host \(host)")
         }
@@ -204,10 +204,9 @@ final class Devices {
     // MARK: Saved matches
 
     /// One host drives one screen, so a new match replaces the host's old one.
-    private func store(_ found: [String: UUID], forgetting forgotten: [String]) {
-        guard !found.isEmpty || !forgotten.isEmpty else { return }
+    private func store(_ found: [String: UUID]) {
+        guard !found.isEmpty else { return }
         lock.withLock {
-            for id in forgotten { pairings[id] = nil }
             for (id, host) in found {
                 for (other, existing) in pairings where existing == host { pairings[other] = nil }
                 pairings[id] = host

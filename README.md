@@ -2,6 +2,8 @@
 
 Let an AI agent use a real iPhone from your Mac. Nothing is installed on the phone.
 
+<p align="center"><img src="docs/demo.gif" width="300" alt="iPhone Use tapping 12 × 34 = on a real iPhone's Calculator"></p>
+
 iPhone Use is a small macOS app. It reads the iPhone's screen over a USB cable and
 taps and types through Bluetooth, posing as a keyboard and mouse. Your agent gets
 an MCP server (and a plain HTTP API) with `screenshot`, `tap`, `swipe`, `type_text`,
